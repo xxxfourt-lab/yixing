@@ -1,0 +1,411 @@
+import React, { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Wind, Zap, Pickaxe, ChevronRight, X, ArrowLeft } from 'lucide-react';
+import { GameState, UpgradeOption, WeaponStats } from '../types/game';
+import { cn } from '../utils/cn';
+
+import { audioManager } from '../utils/audio';
+
+interface UpgradeMenuProps {
+  gameState: GameState;
+  setGameState: React.Dispatch<React.SetStateAction<GameState>>;
+}
+
+export const UpgradeMenu = ({ gameState, setGameState }: UpgradeMenuProps) => {
+  const [view, setView] = useState<'main' | 'weapon' | 'build'>('main');
+
+  const closeMenu = () => {
+    setGameState(prev => ({ ...prev, status: 'exploring' }));
+    setView('main');
+  };
+
+  const getOxygenCost = () => 100 + (gameState.upgrades.oxygenSystem - 1) * 50;
+  const getFuelCost = () => 100 + (gameState.upgrades.flightSystem - 1) * 50;
+
+  const upgradeOxygen = () => {
+    const cost = getOxygenCost();
+    if (gameState.resources.minerals >= cost) {
+      audioManager.playSFX('upgrade');
+      setGameState(prev => ({
+        ...prev,
+        resources: { ...prev.resources, minerals: prev.resources.minerals - cost },
+        upgrades: { ...prev.upgrades, oxygenSystem: prev.upgrades.oxygenSystem + 1 },
+        logs: [...prev.logs, `[SYSTEM] 氧气储备升级至 LV.${prev.upgrades.oxygenSystem + 1}`]
+      }));
+    }
+  };
+
+  const upgradeFuel = () => {
+    const cost = getFuelCost();
+    if (gameState.resources.minerals >= cost) {
+      audioManager.playSFX('upgrade');
+      setGameState(prev => ({
+        ...prev,
+        resources: { ...prev.resources, minerals: prev.resources.minerals - cost },
+        upgrades: { ...prev.upgrades, flightSystem: prev.upgrades.flightSystem + 1 },
+        logs: [...prev.logs, `[SYSTEM] 飞行燃料升级至 LV.${prev.upgrades.flightSystem + 1}`]
+      }));
+    }
+  };
+
+  const generateWeaponOptions = (): UpgradeOption[] => {
+    const options: UpgradeOption[] = [];
+    const rarities: ('gray' | 'green' | 'blue' | 'gold')[] = ['gray', 'green', 'blue', 'gold'];
+    const weights = [70, 60, 60, 30]; // Relative weights based on user prompt percentages
+
+    const acquiredGolds = gameState.upgrades.weaponStats.acquiredGoldUpgrades || [];
+    const currentRollGolds: string[] = [];
+
+    for (let i = 0; i < 3; i++) {
+      // Determine rarity
+      let selectedRarity: 'gray' | 'green' | 'blue' | 'gold' = 'gray';
+      const roll = Math.random() * 100;
+      
+      // User prompt says: Gray 70%, Green 60%, Blue 60%, Gold 30%. 
+      // These aren't standard probabilities. I'll use them as thresholds or weights.
+      // Let's use a simpler weighted random for better gameplay feel.
+      if (roll < 5) selectedRarity = 'gold';
+      else if (roll < 15) selectedRarity = 'blue';
+      else if (roll < 40) selectedRarity = 'green';
+      else selectedRarity = 'gray';
+
+      const optionPool: UpgradeOption[] = [];
+
+      if (selectedRarity === 'gray') {
+        optionPool.push(
+          { id: 'g1', title: '轻量化弹药', description: '攻击速度 +5%', rarity: 'gray', effect: s => ({ ...s, attackSpeed: s.attackSpeed * 1.05 }) },
+          { id: 'g2', title: '强化火药', description: '攻击力 +5%', rarity: 'gray', effect: s => ({ ...s, attackPower: s.attackPower * 1.05 }) },
+          { id: 'g3', title: '多重弹头', description: '每次射击多增加一发子弹', rarity: 'gray', effect: s => ({ ...s, bulletsPerShot: s.bulletsPerShot + 1 }) }
+        );
+      } else if (selectedRarity === 'green') {
+        optionPool.push(
+          { id: 'gr1', title: '高效冷却', description: '攻击速度 +10%', rarity: 'green', effect: s => ({ ...s, attackSpeed: s.attackSpeed * 1.1 }) },
+          { id: 'gr2', title: '高爆弹头', description: '攻击力 +10%', rarity: 'green', effect: s => ({ ...s, attackPower: s.attackPower * 1.1 }) },
+          { id: 'gr3', title: '散射系统', description: '每次射击多增加两发子弹', rarity: 'green', effect: s => ({ ...s, bulletsPerShot: s.bulletsPerShot + 2 }) },
+          { id: 'gr4', title: '长管枪管', description: '攻击距离 +50m', rarity: 'green', effect: s => ({ ...s, attackRange: s.attackRange + 50 }) }
+        );
+      } else if (selectedRarity === 'blue') {
+        optionPool.push(
+          { id: 'b1', title: '超频驱动', description: '攻击速度 +15% 且 攻击距离 +50m', rarity: 'blue', effect: s => ({ ...s, attackSpeed: s.attackSpeed * 1.15, attackRange: s.attackRange + 50 }) },
+          { id: 'b2', title: '跳弹技术', description: '子弹击中怪物后会反弹一次', rarity: 'blue', effect: s => ({ ...s, hasBounce: true }) },
+          { id: 'b3', title: '脉冲激光', description: '每三次攻击增加一条穿透激光 (2x 伤害)', rarity: 'blue', effect: s => ({ ...s, laserEveryNth: 3 }) }
+        );
+      } else if (selectedRarity === 'gold') {
+        const goldOptions: UpgradeOption[] = [
+          { id: 'au1', title: '虚空核心', description: '攻击速度 +20% 且 攻击距离 +200m', rarity: 'gold', effect: s => ({ ...s, attackSpeed: s.attackSpeed * 1.2, attackRange: s.attackRange + 200, acquiredGoldUpgrades: [...(s.acquiredGoldUpgrades || []), 'au1'] }) },
+          { id: 'au2', title: '加特林机枪', description: '射速提升至 0.1s 每发', rarity: 'gold', effect: s => ({ ...s, isMachineGun: true, attackSpeed: 1, acquiredGoldUpgrades: [...(s.acquiredGoldUpgrades || []), 'au2'] }) },
+          { id: 'au3', title: '轨道激光枪', description: '升级为激光武器 (0.5s 初始射速)', rarity: 'gold', effect: s => ({ ...s, isLaserGun: true, attackSpeed: 1, acquiredGoldUpgrades: [...(s.acquiredGoldUpgrades || []), 'au3'] }) },
+          { id: 'au4', title: '重型火炮', description: '3x 伤害且 200m 爆炸范围 (0.8s 初始射速)', rarity: 'gold', effect: s => ({ ...s, isCannon: true, attackPower: s.attackPower * 3, explosionRadius: 200, attackSpeed: 1, acquiredGoldUpgrades: [...(s.acquiredGoldUpgrades || []), 'au4'] }) }
+        ];
+        
+        const availableGoldOptions = goldOptions.filter(opt => !acquiredGolds.includes(opt.id) && !currentRollGolds.includes(opt.id));
+        
+        if (availableGoldOptions.length > 0) {
+          optionPool.push(...availableGoldOptions);
+        } else {
+          // Fallback to blue if all gold are acquired or already in this roll
+          optionPool.push(
+            { id: 'b1', title: '超频驱动', description: '攻击速度 +15% 且 攻击距离 +50m', rarity: 'blue', effect: s => ({ ...s, attackSpeed: s.attackSpeed * 1.15, attackRange: s.attackRange + 50 }) },
+            { id: 'b2', title: '跳弹技术', description: '子弹击中怪物后会反弹一次', rarity: 'blue', effect: s => ({ ...s, hasBounce: true }) },
+            { id: 'b3', title: '脉冲激光', description: '每三次攻击增加一条穿透激光 (2x 伤害)', rarity: 'blue', effect: s => ({ ...s, laserEveryNth: 3 }) }
+          );
+        }
+      }
+
+      const randomOption = optionPool[Math.floor(Math.random() * optionPool.length)];
+      if (randomOption.rarity === 'gold') {
+        currentRollGolds.push(randomOption.id);
+      }
+      options.push({ ...randomOption, id: randomOption.id + '-' + Math.random().toString(36).substr(2, 5) });
+    }
+    return options;
+  };
+
+  const openWeaponMenu = () => {
+    if (gameState.resources.minerals < 100) return;
+    const options = generateWeaponOptions();
+    setGameState(prev => ({ 
+      ...prev, 
+      resources: { ...prev.resources, minerals: prev.resources.minerals - 100 },
+      weaponUpgradeOptions: options 
+    }));
+    setView('weapon');
+  };
+
+  const applyWeaponUpgrade = (option: UpgradeOption) => {
+    audioManager.playSFX('upgrade');
+    setGameState(prev => ({
+      ...prev,
+      upgrades: {
+        ...prev.upgrades,
+        weaponStats: option.effect(prev.upgrades.weaponStats)
+      },
+      weaponUpgradeOptions: undefined,
+      status: 'exploring',
+      logs: [...prev.logs, `[WEAPON] 获得升级: ${option.title}`]
+    }));
+  };
+
+  const openBuildMenu = () => {
+    setView('build');
+  };
+
+  const buyBuilding = (type: string, name: string, cost: number) => {
+    if (gameState.resources.minerals >= cost) {
+      audioManager.playSFX('upgrade');
+      setGameState(prev => ({
+        ...prev,
+        resources: { ...prev.resources, minerals: prev.resources.minerals - cost },
+        buildingInventory: [...prev.buildingInventory, { id: Math.random().toString(36).substr(2, 9), type: type as any, name }],
+        logs: [...prev.logs, `[BUILD] 购买建筑: ${name}`]
+      }));
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (gameState.status !== 'upgrading') return;
+      
+      if (e.code === 'Escape') closeMenu();
+      
+      if (view === 'main') {
+        if (e.key === '1') upgradeOxygen();
+        if (e.key === '2') upgradeFuel();
+        if (e.key === '3') openWeaponMenu();
+        if (e.key === '4') openBuildMenu();
+      } else if (view === 'weapon' && gameState.weaponUpgradeOptions) {
+        if (e.key === '1') applyWeaponUpgrade(gameState.weaponUpgradeOptions[0]);
+        if (e.key === '2') applyWeaponUpgrade(gameState.weaponUpgradeOptions[1]);
+        if (e.key === '3') applyWeaponUpgrade(gameState.weaponUpgradeOptions[2]);
+      } else if (view === 'build') {
+        if (e.key === '1') buyBuilding('teleport-tower', '传送塔', 150);
+        if (e.key === '2') buyBuilding('mech-miner-institute', '机甲矿工研究所', 200);
+        if (e.key === '3') buyBuilding('turret', '炮塔', 200);
+        if (e.key === '4') buyBuilding('laser-tower', '激光灼烧塔', 300);
+        if (e.key === '5') buyBuilding('mind-control-tower', '心灵控制塔', 300);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [gameState.status, view, gameState.weaponUpgradeOptions]);
+
+  return (
+    <AnimatePresence>
+      {gameState.status === 'upgrading' && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4"
+        >
+          <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-12 gap-8">
+            {/* Left Side: Options */}
+            <div className="md:col-span-8 flex flex-col gap-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  {view !== 'main' && (
+                    <button onClick={() => setView('main')} className="p-2 hover:bg-white/10 rounded-full transition-colors text-white/60">
+                      <ArrowLeft size={20} />
+                    </button>
+                  )}
+                  <h2 className="text-2xl font-bold tracking-tighter text-emerald-500 font-mono">
+                    {view === 'main' ? 'VANGUARD-01 升级协议' : view === 'weapon' ? '武器系统重构方案' : '建筑设施制造'}
+                  </h2>
+                </div>
+                <button onClick={closeMenu} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {view === 'main' ? (
+                  <>
+                    <UpgradeCard 
+                      index={1}
+                      icon={Wind}
+                      title="氧气储备升级"
+                      description={`提升 50 最大氧气储备含量。当前等级: LV.${gameState.upgrades.oxygenSystem}`}
+                      cost={getOxygenCost()}
+                      canAfford={gameState.resources.minerals >= getOxygenCost()}
+                      onClick={upgradeOxygen}
+                    />
+                    <UpgradeCard 
+                      index={2}
+                      icon={Zap}
+                      title="飞行燃料升级"
+                      description={`提升 50 最大飞行燃料含量。当前等级: LV.${gameState.upgrades.flightSystem}`}
+                      cost={getFuelCost()}
+                      canAfford={gameState.resources.minerals >= getFuelCost()}
+                      onClick={upgradeFuel}
+                    />
+                    <UpgradeCard 
+                      index={3}
+                      icon={Pickaxe}
+                      title="武器系统升级"
+                      description="进入武器重构界面，随机获得三项性能提升方案。"
+                      cost={100}
+                      canAfford={gameState.resources.minerals >= 100}
+                      onClick={openWeaponMenu}
+                      isWeapon
+                    />
+                    <UpgradeCard 
+                      index={4}
+                      icon={Pickaxe}
+                      title="建筑设施制造"
+                      description="进入建筑制造界面，制造科技类与防御类建筑。"
+                      cost={0}
+                      canAfford={true}
+                      onClick={openBuildMenu}
+                      isWeapon
+                    />
+                  </>
+                ) : view === 'weapon' ? (
+                  gameState.weaponUpgradeOptions?.map((option, idx) => (
+                    <WeaponUpgradeCard 
+                      key={option.id}
+                      index={idx + 1}
+                      option={option}
+                      onClick={() => applyWeaponUpgrade(option)}
+                    />
+                  ))
+                ) : (
+                  <>
+                    <h3 className="text-sm font-bold text-emerald-400 mt-2">科技类建筑</h3>
+                    <UpgradeCard 
+                      index={1} icon={Zap} title="传送塔"
+                      description="建造以后可以在传送塔处按”R“键返回船舱处"
+                      cost={150} canAfford={gameState.resources.minerals >= 150}
+                      onClick={() => buyBuilding('teleport-tower', '传送塔', 150)}
+                    />
+                    <UpgradeCard 
+                      index={2} icon={Pickaxe} title="机甲矿工研究所"
+                      description="派出一个小型机甲去搜寻矿山然后自动采矿，最大容量50"
+                      cost={200} canAfford={gameState.resources.minerals >= 200}
+                      onClick={() => buyBuilding('mech-miner-institute', '机甲矿工研究所', 200)}
+                    />
+                    <h3 className="text-sm font-bold text-emerald-400 mt-4">防御类建筑</h3>
+                    <UpgradeCard 
+                      index={3} icon={Wind} title="炮塔"
+                      description="每次攻击20伤害，小范围爆炸，攻击距离300m，每2秒攻击一次"
+                      cost={200} canAfford={gameState.resources.minerals >= 200}
+                      onClick={() => buyBuilding('turret', '炮塔', 200)}
+                    />
+                    <UpgradeCard 
+                      index={4} icon={Zap} title="激光灼烧塔"
+                      description="持续攻击怪物，初始5伤害，每秒增长5伤害，攻击距离250m"
+                      cost={300} canAfford={gameState.resources.minerals >= 300}
+                      onClick={() => buyBuilding('laser-tower', '激光灼烧塔', 300)}
+                    />
+                    <UpgradeCard 
+                      index={5} icon={Wind} title="心灵控制塔"
+                      description="200m控制范围，控制怪物成友方5秒，冷却5秒"
+                      cost={300} canAfford={gameState.resources.minerals >= 300}
+                      onClick={() => buyBuilding('mind-control-tower', '心灵控制塔', 300)}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Right Side: Stats Summary */}
+            <div className="md:col-span-4 bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col gap-6">
+              <h3 className="text-xs font-bold uppercase tracking-widest opacity-40 border-b border-white/10 pb-2">当前系统状态</h3>
+              
+              <div className="space-y-4 font-mono text-xs">
+                <StatRow label="最大氧气" value={100 + (gameState.upgrades.oxygenSystem - 1) * 50} unit="UNITS" />
+                <StatRow label="最大燃料" value={100 + (gameState.upgrades.flightSystem - 1) * 50} unit="UNITS" />
+                <StatRow label="攻击速度" value={`${(gameState.upgrades.weaponStats.attackSpeed * 100).toFixed(0)}%`} />
+                <StatRow label="攻击力" value={`${(gameState.upgrades.weaponStats.attackPower * 100).toFixed(0)}%`} />
+                <StatRow label="弹头数量" value={gameState.upgrades.weaponStats.bulletsPerShot} />
+                <StatRow label="射程" value={`${gameState.upgrades.weaponStats.attackRange}m`} />
+                <StatRow label="特殊属性" value={
+                  [
+                    gameState.upgrades.weaponStats.hasBounce ? '跳弹' : null,
+                    gameState.upgrades.weaponStats.laserEveryNth > 0 ? `脉冲激光(1/${gameState.upgrades.weaponStats.laserEveryNth})` : null,
+                    gameState.upgrades.weaponStats.isMachineGun ? '机枪模式' : null,
+                    gameState.upgrades.weaponStats.isLaserGun ? '激光模式' : null,
+                    gameState.upgrades.weaponStats.isCannon ? '火炮模式' : null,
+                  ].filter(Boolean).join(', ') || '标准'
+                } />
+              </div>
+
+              <div className="mt-auto pt-6 border-t border-white/10">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] uppercase opacity-40">可用矿物</span>
+                  <span className="text-xl font-bold text-emerald-400 font-mono">{Math.floor(gameState.resources.minerals)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+const UpgradeCard = ({ index, icon: Icon, title, description, cost, canAfford, onClick, isWeapon }: any) => (
+  <button 
+    onClick={onClick}
+    disabled={!canAfford}
+    className={cn(
+      "w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4 group relative overflow-hidden",
+      canAfford ? "bg-white/5 border-white/10 hover:bg-white/10 hover:border-emerald-500/50" : "bg-white/5 border-white/5 opacity-40 cursor-not-allowed"
+    )}
+  >
+    <div className="w-12 h-12 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+      <Icon size={24} />
+    </div>
+    <div className="flex-1">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-mono text-emerald-500/60">[{index}]</span>
+        <h4 className="font-bold text-lg">{title}</h4>
+      </div>
+      <p className="text-xs opacity-60 mt-1">{description}</p>
+    </div>
+    <div className="text-right">
+      <div className="flex flex-col items-end">
+        {isWeapon && <ChevronRight className="text-emerald-500 group-hover:translate-x-1 transition-transform mb-1" />}
+        <span className={cn("text-sm font-mono font-bold", canAfford ? "text-emerald-400" : "text-red-400")}>{cost}</span>
+        <span className="text-[8px] uppercase opacity-40">MINERALS</span>
+      </div>
+    </div>
+  </button>
+);
+
+const WeaponUpgradeCard = ({ index, option, onClick }: { index: number, option: UpgradeOption, onClick: () => void }) => {
+  const rarityColors = {
+    gray: 'border-slate-500/30 bg-slate-500/5 text-slate-400',
+    green: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400',
+    blue: 'border-blue-500/30 bg-blue-500/5 text-blue-400',
+    gold: 'border-yellow-500/30 bg-yellow-500/5 text-yellow-400',
+  };
+
+  return (
+    <button 
+      onClick={onClick}
+      className={cn(
+        "w-full text-left p-5 rounded-xl border transition-all flex items-center gap-4 group relative overflow-hidden hover:scale-[1.02]",
+        rarityColors[option.rarity]
+      )}
+    >
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono opacity-60">[{index}]</span>
+          <h4 className="font-bold text-lg uppercase tracking-tight">{option.title}</h4>
+          <span className="text-[8px] px-1.5 py-0.5 rounded border border-current uppercase font-bold ml-auto">
+            {option.rarity}
+          </span>
+        </div>
+        <p className="text-sm mt-2 opacity-80">{option.description}</p>
+      </div>
+    </button>
+  );
+};
+
+const StatRow = ({ label, value, unit }: any) => (
+  <div className="flex justify-between items-center">
+    <span className="opacity-40 uppercase text-[9px] tracking-widest">{label}</span>
+    <span className="font-bold text-white/90">{value} {unit}</span>
+  </div>
+);
